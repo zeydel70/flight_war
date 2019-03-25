@@ -13,6 +13,8 @@ from math import sin, cos, pi, atan
 N_FIELD = 1000 
 FLIGHT_OBJ = []
 ALL_ATTACKING_ROCKETS = []
+DEAD_FLIGHT_OBJECTS = []
+DEAD_ROCKETS = []
 
 root = Tk()
 label = Label(font='sans 20')
@@ -45,7 +47,25 @@ def get_rockets_list(options):
                 rockets_list.append(obj_rocket)
         return rockets_list
     
-
+def get_center_coords(object):
+    return round(object.coords[0], 2)+round(object.size/2, 2), round(object.coords[1], 2)+round(object.size/2, 2)
+    
+def hit_enemy(rocket):
+    rc = rocket.coords
+    ec = rocket.enemy.coords
+    rs = rocket.size
+    # когда левый верхний угол касается врага
+    condition_left_up = rc[0] > ec[0] and rc[0] < ec[2] and rc[1] > ec[1] and rc[1] < ec[3]
+    # правый верхний угол
+    condition_right_up = rc[0]+rs > ec[0] and rc[0]+rs < ec[2] and rc[1] > ec[1] and rc[1] < ec[3]
+    # левый нижний угол
+    condition_left_down = rc[0] > ec[0] and rc[0] < ec[2] and rc[1]+rs > ec[1] and rc[1]+rs < ec[3]
+    # правый нижний угол
+    condition_right_down = rc[2] > ec[0] and rc[2] < ec[2] and rc[3] > ec[1] and rc[3] < ec[3]
+    if condition_left_up or condition_right_up or condition_left_down or condition_right_down:
+        return True
+    else:
+        return False
 #def gg(dt):
 ##    print(gg)
 #    rockets_list = []
@@ -65,6 +85,9 @@ class ModelObject():
         self.angle = random.uniform(0, round(2*pi, 2))
         x, y = random.randint(0, N_FIELD-self.size), random.randint(0, N_FIELD-self.size)
         self.coords = [int(x), int(y), int(x+self.size), int(y+self.size)]
+        
+    def get_center_coords(self):
+        pass
 
 class FlightObject(ModelObject):
     def __init__(self, size, speed, health_points, rockets=0, firerate=2, canvas=c):
@@ -123,46 +146,59 @@ class FlightObject(ModelObject):
     
     def danger_zone(self):
         if self.get_max_dist_rockets():
-            max_distance_rocket = self.get_max_dist_rockets()[0]
-            x0_coord = self.coords[0]+0.5*self.size-max_distance_rocket.distance_attack if self.coords[0]+0.5*self.size-max_distance_rocket.distance_attack > 0 else 0
-            y0_coord = self.coords[1]+0.5*self.size-max_distance_rocket.distance_attack if self.coords[1]+0.5*self.size-max_distance_rocket.distance_attack > 0 else 0
-            x1_coord = self.coords[0]+0.5*self.size+max_distance_rocket.distance_attack if self.coords[0]+0.5*self.size+max_distance_rocket.distance_attack < N_FIELD else N_FIELD
-            y1_coord = self.coords[1]+0.5*self.size+max_distance_rocket.distance_attack if self.coords[1]+0.5*self.size+max_distance_rocket.distance_attack < N_FIELD else N_FIELD
+            max_distance_attack = self.get_max_dist_rockets()[0].distance_attack
+            x0_coord = self.coords[0]+0.5*self.size-max_distance_attack if self.coords[0]+0.5*self.size-max_distance_attack > 0 else 0
+            y0_coord = self.coords[1]+0.5*self.size-max_distance_attack if self.coords[1]+0.5*self.size-max_distance_attack > 0 else 0
+            x1_coord = self.coords[0]+0.5*self.size+max_distance_attack if self.coords[0]+0.5*self.size+max_distance_attack < N_FIELD else N_FIELD
+            y1_coord = self.coords[1]+0.5*self.size+max_distance_attack if self.coords[1]+0.5*self.size+max_distance_attack < N_FIELD else N_FIELD
             return [x0_coord, y0_coord, x1_coord, y1_coord]
         else:
             return None
         
-        
-    def get_enemies(self, objects_list):
+    def enemies(self, objects_list):
         if self.danger_zone():
             if self in objects_list:
                 other_objects = [obj for obj in objects_list if self != obj]
-                attacking_rockets = self.get_max_dist_rockets()
-                for rocket in attacking_rockets:
-                    rocket.coords = self.coords
                 enemies_list = []
                 for other_object in other_objects:
                     condition_X = other_object.coords[0]+round(self.size/2, 2) >= self.danger_zone()[0] and other_object.coords[0]+round(self.size/2, 2) <= self.danger_zone()[2]
                     condition_Y = other_object.coords[1]+round(self.size/2, 2) >= self.danger_zone()[1] and other_object.coords[1]+round(self.size/2, 2) <= self.danger_zone()[3]
                     if condition_X and condition_Y:
                         enemies_list.append(other_object)
-                if enemies_list:
-                    if len(enemies_list) > self.firerate:
-                        enemies_list = enemies_list[:self.firerate]
-                    for i_rocket in range(len(attacking_rockets)):
-                        attacking_rockets[i_rocket].coords = self.coords
-                        attacking_rockets[i_rocket].enemy = enemies_list[i_rocket]
-                global ALL_ATTACKING_ROCKETS        
-                ALL_ATTACKING_ROCKETS += attacking_rockets
                 return enemies_list
-            else: 
+            else:
                 print("WARNING: Object %s don't exist on battlefield!" % self)
         else:
+            print("WARNING: %s rockets don't exist on battlefield!" % self)
+                
+    
+    def rockets_for_enemies(self, objects_list):
+        enemies = self.enemies(objects_list)
+        if enemies:
+            attacking_rockets = self.get_max_dist_rockets()
+            attacking_rockets = attacking_rockets[:min(len(attacking_rockets), len(enemies))]
+            if len(enemies) > self.firerate:
+                enemies = enemies[:self.firerate]
+            for i_rocket in range(len(attacking_rockets)):
+                coords = [get_center_coords(self)[0]-round(attacking_rockets[i_rocket].size/2, 2),
+                          get_center_coords(self)[1]-round(attacking_rockets[i_rocket].size/2, 2),
+                          get_center_coords(self)[0]+round(attacking_rockets[i_rocket].size/2, 2),
+                          get_center_coords(self)[1]+round(attacking_rockets[i_rocket].size/2, 2)]
+                attacking_rockets[i_rocket].coords = coords
+                attacking_rockets[i_rocket].enemy = enemies[i_rocket]
+            return attacking_rockets    
+        else:
             return None
+        
+    def is_alive(self):
+        if self.health_points > 0:
+            return True
+        else:
+            return False
     
         
 class Rocket(ModelObject):
-    def __init__(self, speed, distance_attack=100, lifetime=5000, damage=30, size=10, canvas=c):
+    def __init__(self, speed, distance_attack=100, lifetime=50, damage=40, size=10, canvas=c):
         super().__init__(size, speed, canvas)
         self.angle = 0
         self.distance_attack = distance_attack
@@ -172,11 +208,16 @@ class Rocket(ModelObject):
         self.enemy = 0
         self.rocket = 0
         self.coords = None
+        self.current_time = 0
+        self.color = get_random_color()
 #        self.rocket = self.canvas.create_rectangle(self.coords, fill=get_random_color())
+    
         
     def motion(self):
+        self.current_time += 1
         if not self.rocket:
-            self.rocket = self.canvas.create_rectangle(self.coords, fill=get_random_color())
+            self.rocket = self.canvas.create_rectangle(self.coords, fill=self.color)
+        last_coords = [self.coords[0]+round(self.size/2, 2), self.coords[1]+round(self.size/2, 2)]
         # найти угол по координатам
         delta_X = self.enemy.coords[0]-self.coords[0]+round(self.size/2, 2)
         delta_Y = self.enemy.coords[1]-self.coords[1]+round(self.size/2, 2)
@@ -199,26 +240,65 @@ class Rocket(ModelObject):
         self.coords = [self.coords[0]+x_delta, self.coords[1]+y_delta, self.coords[2]+x_delta, self.coords[3]+y_delta]
         self.coords = list(map(lambda x: round(x, 2), self.coords))
         c.coords(self.rocket, self.coords)
+        current_coords = [self.coords[0]+round(self.size/2, 2), self.coords[1]+round(self.size/2, 2)] 
+        trajectory_coords = last_coords + current_coords
+        print(trajectory_coords)
+        c.create_line(trajectory_coords,dash=(10,2), fill=self.color)
         
-for i in range(5):
-#  конструктор  size, speed, health_points, rockets=0, firerate=2, canvas=c
-    sp = random.randint(1, 20)
-    tt =  FlightObject(20, sp, 30, [[3, random.randint(1, 20), random.randint(1, 20), random.randint(100, 200)], [2, random.randint(1, 20), random.randint(1, 20), random.randint(150, 220)]])
-    FLIGHT_OBJ.append(tt)  
-while 1:
-    for f in FLIGHT_OBJ:
-        f.motion()
-        if f.get_enemies(FLIGHT_OBJ):
-            print('Yeaa=', f)
-#        print('rockets_max=', f.get_max_dist_rocket())
-#        print('enemies_max=', f.get_enemies(FLIGHT_OBJ)) 
-    if ALL_ATTACKING_ROCKETS:
-        for r in ALL_ATTACKING_ROCKETS:
-            r.motion()
-    c.update()  
-    time.sleep(0.1)
-    
+    def die_enemy(self):
+        if self.current_time >= self.lifetime:
+            self.rocket = None
+            return True
+        elif hit_enemy(self):
+            self.enemy.health_points -= self.damage
+            self.rocket = None
+            return True
+        else:
+            return False
 
+
+
+
+flag = True       
+for i in range(10):
+#  конструктор Летающего объекта: size, speed, health_points, rockets=0, firerate=2, canvas=c
+# констурктор Ракеты: speed, distance_attack=100, lifetime=50, damage=40, size=10, canvas=c
+    sp = random.randint(1, 20)
+    rockets = [[3, random.randint(5, 20), random.randint(20, 50), random.randint(100, 200), 30], 
+                 [2, random.randint(5, 20), random.randint(30, 60), random.randint(150, 220), 20],
+                 [3, random.randint(5, 15), random.randint(50, 80), random.randint(50, 160), 15]]
+    tt =  FlightObject(20, sp, 100, rockets)
+    FLIGHT_OBJ.append(tt)  
+while flag: 
+    for fl_obj in FLIGHT_OBJ:
+        if not fl_obj.is_alive():
+            fl_obj.ball = None
+            DEAD_FLIGHT_OBJECTS.append(fl_obj)
+        else:
+            fl_obj.motion()
+            if fl_obj.enemies(FLIGHT_OBJ):
+                attacking_rockets = fl_obj.rockets_for_enemies(FLIGHT_OBJ)
+                ALL_ATTACKING_ROCKETS += attacking_rockets
+                fl_obj.rockets_list = [rocket for rocket in fl_obj.rockets_list if rocket not in attacking_rockets]
+#        print('rockets_max=', f.get_max_dist_rocket())
+#        print('enemies_max=', f.get_enemies(FLIGHT_OBJ))
+    FLIGHT_OBJ = [flight_object for flight_object in FLIGHT_OBJ if flight_object not in DEAD_FLIGHT_OBJECTS]
+    if ALL_ATTACKING_ROCKETS:
+        for rocket in ALL_ATTACKING_ROCKETS:
+            if not rocket.die_enemy():
+                rocket.motion()
+            else:
+                DEAD_ROCKETS.append(rocket)
+        ALL_ATTACKING_ROCKETS = [rocket for rocket in ALL_ATTACKING_ROCKETS if rocket not in DEAD_ROCKETS]
+    c.update()  
+    time.sleep(0.4)
+    firepower = []
+    for fl_obj in FLIGHT_OBJ:
+        firepower += fl_obj.rockets_list
+    if len(FLIGHT_OBJ) == 1 or len(firepower) == 0:
+        flag = False
+    
+print('Battle is finished!!!')
 root.mainloop()
 #time.sleep(3) 
 #c.delete(tt)       
