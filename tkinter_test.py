@@ -341,7 +341,7 @@ while flag:
     if len(FLIGHT_OBJ) == 1 or len(firepower) == 0:
         flag = False
     
-c.create_text(N_FIELD/2, 20, text="Battle is finished!!!", justify=center, font="Verdana 21")
+c.create_text(N_FIELD/2, 20, text="Battle is finished!!!", justify=CENTER, font="Verdana 21")
 root.mainloop()
 
 
